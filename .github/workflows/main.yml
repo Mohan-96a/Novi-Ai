@@ -1,0 +1,119 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    paths:
+      - 'chatbot-new-frontend/**'
+    branches:
+      - 'main'
+  pull_request:
+    paths:
+      - 'chatbot-new-frontend/**'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install dependencies
+        working-directory: chatbot-new-frontend
+        run: npm install
+
+      - name: Build project
+        working-directory: chatbot-new-frontend
+        run: npm run build
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_KEY }}
+
+      - name: Set up gcloud CLI
+        uses: google-github-actions/setup-gcloud@v1
+
+      - name: Authenticate with Google Cloud
+        uses: google-github-actions/auth@v1
+        with:
+          workload_identity_provider: "projects/283192146773/locations/global/workloadIdentityPools/github-actions-pool/providers/new-github-provider"
+          service_account: "github-actions-sa@novife.iam.gserviceaccount.com"
+          audience: "https://iam.googleapis.com/projects/283192146773/locations/global/workloadIdentityPools/github-actions-pool/providers/new-github-provider"
+
+  deploy-dev:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Authenticate with Google Cloud
+        uses: google-github-actions/auth@v1
+        with:
+          workload_identity_provider: "projects/283192146773/locations/global/workloadIdentityPools/github-actions-pool/providers/new-github-provider"
+          service_account: "github-actions-sa@novife.iam.gserviceaccount.com"
+          audience: "https://iam.googleapis.com/projects/283192146773/locations/global/workloadIdentityPools/github-actions-pool/providers/new-github-provider"
+
+      - name: Set GCP project
+        run: gcloud config set project novife
+
+      - name: Deploy to Cloud Run dev
+        run: |
+          gcloud run deploy novife-frontend-dev \
+            --source=./chatbot-new-frontend \
+            --region=us-central1 \
+            --platform=managed \
+            --allow-unauthenticated \
+            --set-env-vars NEXT_PUBLIC_SUPABASE_URL=${{ secrets.SUPABASE_URL }},NEXT_PUBLIC_SUPABASE_ANON_KEY=${{ secrets.SUPABASE_KEY }}
+
+  approval:
+    needs: deploy-dev
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+
+    steps:
+      - name: Await manual approval
+        run: echo "Waiting for production deployment approval..."
+
+  deploy-prod:
+    needs: approval
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Authenticate with Google Cloud
+        uses: google-github-actions/auth@v1
+        with:
+          workload_identity_provider: "projects/283192146773/locations/global/workloadIdentityPools/github-actions-pool/providers/new-github-provider"
+          service_account: "github-actions-sa@novife.iam.gserviceaccount.com"
+          audience: "https://iam.googleapis.com/projects/283192146773/locations/global/workloadIdentityPools/github-actions-pool/providers/new-github-provider"
+
+      - name: Set GCP project
+        run: gcloud config set project novife
+
+      - name: Deploy to Cloud Run prod
+        run: |
+          gcloud run deploy novife-frontend-prod \
+            --source=./chatbot-new-frontend \
+            --region=us-central1 \
+            --platform=managed \
+            --allow-unauthenticated \
+            --set-env-vars NEXT_PUBLIC_SUPABASE_URL=${{ secrets.SUPABASE_URL }},NEXT_PUBLIC_SUPABASE_ANON_KEY=${{ secrets.SUPABASE_KEY }} \
+            --project=novife
