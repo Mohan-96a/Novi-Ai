@@ -9,7 +9,10 @@ npm run dev
 # or
 yarn dev
 # or
+<<<<<<< HEAD
 
+=======
+>>>>>>> e85edb2c70a2653da65bc797a2f31af1468a4bd7
 pnpm dev
 # or
 bun dev
